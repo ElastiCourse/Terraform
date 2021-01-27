@@ -1,0 +1,102 @@
+provider "aws" {
+  region     = "us-east-2"
+  access_key = ""
+  secret_key = ""
+}
+
+resource "aws_subnet" "dev-subnet" {
+  vpc_id     = aws_vpc.dev.id
+  cidr_block = "10.255.255.0/24"
+}
+
+resource "aws_vpc" "dev" {
+  cidr_block = "10.255.255.0/24"
+}
+
+resource "aws_internet_gateway" "internet" {
+  vpc_id = aws_vpc.dev.id
+}
+
+resource "aws_route_table" "route-table" {
+  vpc_id = aws_vpc.dev.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet.id
+  }
+}
+
+
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.dev-subnet.id
+  route_table_id = aws_route_table.route-table.id
+}
+
+resource "aws_network_interface" "web_server_intf" {
+  subnet_id       = aws_subnet.dev-subnet.id
+  security_groups = [aws_security_group.web_traffic.id]
+ }
+
+resource "aws_security_group" "web_traffic" {
+  vpc_id      = aws_vpc.dev.id
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_instance" "webserver" {
+   ami               = "ami-0e06fa29a08d84162"
+   instance_type     = "t2.micro"
+   key_name          = "webserver"
+     network_interface {
+    device_index         = 0
+    network_interface_id = aws_network_interface.web_server_intf.id
+      }
+	}
+resource "aws_eip" "one" {
+  vpc                       = true
+  network_interface         = aws_network_interface.web_server_intf.id
+  depends_on                = [aws_internet_gateway.internet]
+}
+
+resource "aws_route53_record" "blog" {
+  zone_id = ""
+  name    = "blog.elasticourse.net"
+  type    = "A"
+  ttl     = "300"
+  records = [aws_instance.webserver.public_ip]
+    }
+  
+output "DNS" {
+  value = "You can access the blog on this URL http://blog.elasticourse.net"
+}
+
+output "Public_IP" {
+  value = "or, You can access the blog on this IP http://${aws_instance.webserver.public_ip}"
+}
